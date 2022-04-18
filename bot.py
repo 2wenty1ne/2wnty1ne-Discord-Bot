@@ -1,12 +1,14 @@
 # bot.py
+#by DarkVIC -> https://github.com/DarkVIC/Discord_bot
 
 #? Required libaries
 import os
 import discord
 import requests
 import random
-import time
 import ast
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 from datetime import date
 from PIL import Image
@@ -20,7 +22,7 @@ NASA_URL = f'https://api.nasa.gov/planetary/apod?api_key={str(NASA_API_KEY)}'
 
 #? Bot client configuration
 intents = discord.Intents.all()
-prefix = "%"
+prefix = "!"
 client = discord.Client(intents=intents, activity=discord.Game(name=f'prefix: {prefix}'))
 
 
@@ -32,45 +34,90 @@ async def on_ready():
 
 
 #? Function to prevent error from empty messages (e.g pictures)
-def message_length_check(testobject):
+def message_length_check(testobject, switch):
+    #TODO Need to fix the usage of the switch
     if not testobject:
-        print("empty message")
-        return f"""ERROR: Text after this command can't be empty\nFor help type "{prefix}help" """
+        if switch:
+            print(f"""ERROR: Text after this command can't be empty\nFor help type "{prefix}help" """)
+        return (0, "empty message")
     elif len(str(testobject)) > 2000:
-        print("long message")
-        return f"""ERROR: Text after this command has to be less then 2000 characters\n The message you are trying to send has {len(str(testobject))} characters."""
+        if switch:
+            print(f"""ERROR: Text after this command has to be less then 2000 characters\n The message you are trying to send has {len(str(testobject))} characters.""")
+        return (0, "long message")
     else:
-        return testobject
+        return (1, testobject)
+
+
+#? Function to send embeded message
+async def send_message(m_title = None, m_description = None, m_image_url = None, switch = "server", dmrecipient=None, message=None):
+    em_title = message_length_check(m_title, 0)
+    em_description = message_length_check(m_description, 0)
+    em_image_url = message_length_check(m_image_url, 0)
+
+    current_time = datetime.utcnow()
+    embeded_response = discord.Embed(timestamp=current_time, color=discord.Color.random())
+    if not em_title[0] and not em_description[0] and not em_image_url[0]:
+        print("Error: Title and description empty")
+        return
+    if em_title[0]:
+        embeded_response.title = em_title[1]
+    if em_description[0]:
+        embeded_response.description = em_description[1]
+    if em_image_url[0]:
+        embeded_response.set_image(url = em_image_url[1])
+        #TODO Didnt get it to work, still need to use the stream below
+        #embeded_image_resolution = f'{embeded_response.image.width}x{embeded_response.image.height}'
+
+
+    if switch == "server":
+        channel = client.get_channel(message.channel.id)
+        await channel.send(embed=embeded_response)
+    elif switch == "dm":
+        dmrecipient.create_dm
+        await dmrecipient.send(embed=embeded_response)
 
 
 #? Data from NASA APOD data
 def nasa_adop_data(modified_nasa_url, nasa_apod_dict = {}):
     nasa_apod_response_dict = ast.literal_eval(requests.get(modified_nasa_url).text)
-    try:
-        if "hdurl" in nasa_apod_response_dict:
-            nasa_apod_dict["picture_url"] = nasa_apod_response_dict["hdurl"]
-        else:
-            nasa_apod_dict["picture_url"] = nasa_apod_response_dict["url"]
+    if "title" in nasa_apod_response_dict:
         nasa_apod_dict["title"] = nasa_apod_response_dict["title"]
         nasa_apod_dict["date"] = nasa_apod_response_dict["date"]
         nasa_apod_dict["explanation"] = nasa_apod_response_dict["explanation"]
-        return (1, nasa_apod_dict)
-    except KeyError:
+    else:
         return (0, f"Use right date formating (YYYY-MM-DD). For example 2008-10-26, used with command it would look like this: {prefix}apod date 2008-10-26.")
 
-#? Remembers last APOD
-def nasa_apod_last_picture(operator, nasa_apod_dict_input=0, nasa_apod_picture_list=[]):
+    if "hdurl" in nasa_apod_response_dict:
+        nasa_apod_dict["picture_url"] = nasa_apod_response_dict["hdurl"]
+    else:
+        nasa_apod_dict["picture_url"] = nasa_apod_response_dict["url"]
+    return [1, nasa_apod_dict]
+
+
+
+nasa_apod_picture_list=[]
+#? Stores last picture for every channel a picture was send in
+def nasa_apod_last_picture(operator, channel_id, nasa_apod_dict_input=0):
+    global nasa_apod_picture_list
+    nasa_adop_to_pop = None
     if operator == "write":
-        if not nasa_apod_picture_list:
-            nasa_apod_picture_list.append(nasa_apod_dict_input)
-            return (1, f'{nasa_apod_picture_list[0]}') 
-        nasa_apod_picture_list[0] = nasa_apod_dict_input
-        return (1, f'{nasa_apod_picture_list[0]}') 
+        if nasa_apod_picture_list:
+            for i, nasa_apod_picture_list_value in enumerate(nasa_apod_picture_list):
+                if nasa_apod_picture_list_value[0] == channel_id:
+                    nasa_adop_to_pop = i + 1
+                    break
+            if nasa_adop_to_pop:
+                nasa_apod_picture_list.pop(nasa_adop_to_pop - 1)
+            nasa_apod_picture_list.append((channel_id, nasa_apod_dict_input))
+        else:
+            nasa_apod_picture_list.append((channel_id, nasa_apod_dict_input))
+        return 1
     elif operator == "read":
         if nasa_apod_picture_list:
-            return (1, nasa_apod_picture_list[0])
-        else:
-            return (0 ,f'You need to request a picture to get a description.\nUse either "{prefix}apod" to get the picture of today,\n"{prefix}apod random" to get a picture from a random day or\n"{prefix}apod date YYYY-MM-DD" to get a picture from a specific day.')
+            nasa_adop_current_save = [nasa_apod_server_touple for nasa_apod_server_touple in nasa_apod_picture_list if nasa_apod_server_touple[0] == channel_id]
+            if nasa_adop_current_save:
+                return (1, nasa_adop_current_save[0][1])
+        return (0 ,f'You need to request a picture to get a description.\nUse either "{prefix}apod" to get the picture of today,\n"{prefix}apod random" to get a picture from a random day or\n"{prefix}apod date YYYY-MM-DD" to get a picture from a specific day.')
 
 
 #? Output random date
@@ -83,6 +130,7 @@ def random_dates(start, end=str(date.today()), time_format='%Y-%m-%d'):
 #? Gets executed every time a message is send
 @client.event
 async def on_message(message):
+    global nasa_apod_picture_list
     global NASA_URL
 
     guild = message.guild
@@ -95,50 +143,58 @@ async def on_message(message):
     voice_chat_list = []
     for vc in guild.voice_channels:
         voice_chat_list.append(vc)
-    
 
-    commandmessage = message_length_check(message.content)
+
+    commandmessage = message_length_check(message.content, 1)[1]
     commandlist = commandmessage.split()
     command = commandlist[0]
     commandlist.pop(0)
     commandtext = " ".join(commandlist)
 
 
+
     if command == f'{prefix}ping':
-        await channel.send("Pong!")
+        await send_message(m_title="Pong!", message=message)
     
-    
+
     if command == f'{prefix}rpt':
-        await channel.send(message_length_check(commandtext))
+        #TODO better message if input is empty
+        await send_message(m_title=commandtext, m_description=f'From: {message.author.nick}', message=message)
 
 
     if command == f'{prefix}latency':
-        await channel.send(f'Latency: {client.latency}')
+        await send_message("Latency: ", f'{str(client.latency)} ms', message=message)
 
 
     if command == f'{prefix}apod':
         if not commandtext:
-            modified_nasa_url = f'{NASA_URL}&concept_tags=True&hd=True'
+            #TODO Displaying thumbnails if apod is a video doesnt work, vidoe dates: 2019-12-22, 2015-10-28. Maybe return field "thumbnail_url" 
+            modified_nasa_url = f'{NASA_URL}&concept_tags=True&hd=True&thumbs=True'
 
         elif commandlist[0] == "random": 
             random_date = random_dates("1995-06-26")
-            modified_nasa_url = f'{NASA_URL}&concept_tags=True&hd=True&date={random_date}'
+            modified_nasa_url = f'{NASA_URL}&concept_tags=True&thumbs=True&hd=True&date={random_date}'
 
         elif commandlist[0] == "date":
             picture_date = commandlist[1]
-            modified_nasa_url = f'{NASA_URL}&concept_tags=True&hd=True&date={picture_date}' 
+            modified_nasa_url = f'{NASA_URL}&concept_tags=True&thumbs=False&hd=True&date={picture_date}' 
 
         elif commandlist[0] == "description":
-            nasa_apod_picture_tuple = nasa_apod_last_picture("read")
-            print(nasa_apod_picture_tuple)
-            if not nasa_apod_picture_tuple[0]:
-                await channel.send(nasa_apod_picture_tuple[1])
-                return 0
+            nasa_apod_last_picture_response = nasa_apod_last_picture("read", message.channel.id)
+            if nasa_apod_last_picture_response[0]:
+                nasa_apod_picture_dict = ast.literal_eval(nasa_apod_last_picture_response[1])
 
-            nasa_apod_opened_image = Image.open(requests.get(nasa_apod_picture_tuple[1]["picture_url"], stream=True).raw)
-            #await channel.send(f'{nasa_apod_picture_tuple[1]["picture_url"]}')
-            await channel.send(f'Title: {nasa_apod_picture_tuple[1]["title"]}\nFrom: {nasa_apod_picture_tuple[1]["date"]}\nResolution: {nasa_apod_opened_image.size}\nDiscription:\n{nasa_apod_picture_tuple[1]["explanation"]}')
-            return 1
+                nasa_apod_opened_image_size = Image.open(requests.get(nasa_apod_picture_dict["picture_url"], stream=True).raw).size
+
+                embeded_response_title = nasa_apod_picture_dict["title"]
+                embeded_response_date = f'From: {nasa_apod_picture_dict["date"]}'
+                embeded_response_resolution = f'Resolution: {nasa_apod_opened_image_size[0]}x{nasa_apod_opened_image_size[1]}'
+                embeded_response_description = f'From: {embeded_response_date}\nResolution: {embeded_response_resolution}\nDescription:\n{nasa_apod_picture_dict["explanation"]}'
+                await send_message(m_title=embeded_response_title, m_description=embeded_response_description, message=message)
+                return 1
+            else:
+                await channel.send(nasa_apod_last_picture_response[1])
+                return 0 
 
         else:
             await channel.send(f'Unknown command')
@@ -149,14 +205,13 @@ async def on_message(message):
             await channel.send(nasa_adop_data_final_tuple[1])
             return 0
 
-        nasa_adop_data_final = nasa_adop_data_final_tuple[1]
-        nasa_apod_last_picture("write", nasa_adop_data_final)
-        #testimage = Image.open(requests.get(nasa_adop_data_final["picture_url"], stream=True).raw)
-        #print(dir(testimage))
-        #print(testimage.size)
-        await channel.send(f'{nasa_adop_data_final["picture_url"]}')
-        await channel.send(f'Title: {nasa_adop_data_final["title"]}\nFrom: {nasa_adop_data_final["date"]}')
 
+        nasa_adop_data_final = nasa_adop_data_final_tuple[1]
+        nasa_apod_last_picture("write", message.channel.id, str(nasa_adop_data_final))
+        embeded_response_title = nasa_adop_data_final["title"]
+        embeded_response_description = nasa_adop_data_final["date"]
+        embeded_response_image = nasa_adop_data_final["picture_url"]
+        await send_message(m_title=embeded_response_title, m_description=embeded_response_description, m_image_url=embeded_response_image, message=message)
 
 
 

@@ -18,7 +18,7 @@ from PIL import Image
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 NASA_API_KEY = os.getenv('NASA_API_KEY')
-NASA_URL = f'https://api.nasa.gov/planetary/apod?api_key={str(NASA_API_KEY)}'
+NASA_URL = f'https://api.nasa.gov/planetary/apod?api_key={str(NASA_API_KEY)}&thumbs=True&hd=True'
 
 #? Bot client configuration
 intents = discord.Intents.all()
@@ -49,10 +49,12 @@ def message_length_check(testobject, switch):
 
 
 #? Function to send embeded message
-async def send_message(m_title = None, m_description = None, m_image_url = None, switch = "server", dmrecipient=None, message=None):
+async def send_message(m_title = None, m_description = None, m_image_url = None, m_video_url = None, switch = "server", dmrecipient=None, message=None):
     em_title = message_length_check(m_title, 0)
     em_description = message_length_check(m_description, 0)
     em_image_url = message_length_check(m_image_url, 0)
+    em_video_url = message_length_check(m_video_url, 0)
+    em_part_description = ""
 
     current_time = datetime.utcnow()
     embeded_response = discord.Embed(timestamp=current_time, color=discord.Color.random())
@@ -62,9 +64,13 @@ async def send_message(m_title = None, m_description = None, m_image_url = None,
     if em_title[0]:
         embeded_response.title = em_title[1]
     if em_description[0]:
-        embeded_response.description = em_description[1]
+        if em_video_url[0]:
+            em_part_description = em_part_description + f'\nVideo url: {em_video_url[1]}'
+        embeded_response.description = em_description[1] + em_part_description
     if em_image_url[0]:
         embeded_response.set_image(url = em_image_url[1])
+
+
         #TODO Didnt get it to work, still need to use the stream below
         #embeded_image_resolution = f'{embeded_response.image.width}x{embeded_response.image.height}'
 
@@ -80,6 +86,9 @@ async def send_message(m_title = None, m_description = None, m_image_url = None,
 #? Data from NASA APOD data
 def nasa_adop_data(modified_nasa_url, nasa_apod_dict = {}):
     nasa_apod_response_dict = ast.literal_eval(requests.get(modified_nasa_url).text)
+    # for i in nasa_apod_response_dict:
+    #     print(f'{i}: {nasa_apod_response_dict[i]}')
+    # print(f'\n')
     if "title" in nasa_apod_response_dict:
         nasa_apod_dict["title"] = nasa_apod_response_dict["title"]
         nasa_apod_dict["date"] = nasa_apod_response_dict["date"]
@@ -87,10 +96,14 @@ def nasa_adop_data(modified_nasa_url, nasa_apod_dict = {}):
     else:
         return (0, f"Use right date formating (YYYY-MM-DD). For example 2008-10-26, used with command it would look like this: {prefix}apod date 2008-10-26.")
 
-    if "hdurl" in nasa_apod_response_dict:
-        nasa_apod_dict["picture_url"] = nasa_apod_response_dict["hdurl"]
+    if nasa_apod_response_dict["media_type"] == "video":
+        nasa_apod_dict["picture_url"] = [nasa_apod_response_dict["thumbnail_url"], nasa_apod_response_dict["url"]]
+        #nasa_apod_dict["video_url"] = nasa_apod_response_dict["url"]
     else:
-        nasa_apod_dict["picture_url"] = nasa_apod_response_dict["url"]
+        if "hdurl" in nasa_apod_response_dict:
+            nasa_apod_dict["picture_url"] = nasa_apod_response_dict["hdurl"]
+        else:
+            nasa_apod_dict["picture_url"] = nasa_apod_response_dict["url"]
     return [1, nasa_apod_dict]
 
 
@@ -117,7 +130,7 @@ def nasa_apod_last_picture(operator, channel_id, nasa_apod_dict_input=0):
             nasa_adop_current_save = [nasa_apod_server_touple for nasa_apod_server_touple in nasa_apod_picture_list if nasa_apod_server_touple[0] == channel_id]
             if nasa_adop_current_save:
                 return (1, nasa_adop_current_save[0][1])
-        return (0 ,f'You need to request a picture to get a description.\nUse either "{prefix}apod" to get the picture of today,\n"{prefix}apod random" to get a picture from a random day or\n"{prefix}apod date YYYY-MM-DD" to get a picture from a specific day.')
+        return (0 ,f'You need to request a picture in this channel to get a description.\nUse either "{prefix}apod" to get the picture of today,\n"{prefix}apod random" to get a picture from a random day or\n"{prefix}apod date YYYY-MM-DD" to get a picture from a specific day.')
 
 
 #? Output random date
@@ -168,16 +181,15 @@ async def on_message(message):
 
     if command == f'{prefix}apod':
         if not commandtext:
-            #TODO Displaying thumbnails if apod is a video doesnt work, vidoe dates: 2019-12-22, 2015-10-28. Maybe return field "thumbnail_url" 
-            modified_nasa_url = f'{NASA_URL}&concept_tags=True&hd=True&thumbs=True'
+            modified_nasa_url = f'{NASA_URL}'
 
         elif commandlist[0] == "random": 
             random_date = random_dates("1995-06-26")
-            modified_nasa_url = f'{NASA_URL}&concept_tags=True&thumbs=True&hd=True&date={random_date}'
+            modified_nasa_url = f'{NASA_URL}&date={random_date}'
 
         elif commandlist[0] == "date":
             picture_date = commandlist[1]
-            modified_nasa_url = f'{NASA_URL}&concept_tags=True&thumbs=False&hd=True&date={picture_date}' 
+            modified_nasa_url = f'{NASA_URL}&date={picture_date}'
 
         elif commandlist[0] == "description":
             nasa_apod_last_picture_response = nasa_apod_last_picture("read", message.channel.id)
@@ -193,11 +205,11 @@ async def on_message(message):
                 await send_message(m_title=embeded_response_title, m_description=embeded_response_description, message=message)
                 return 1
             else:
-                await channel.send(nasa_apod_last_picture_response[1])
+                await send_message(m_title="Warning", m_description=nasa_apod_last_picture_response[1], message=message)
                 return 0 
 
         else:
-            await channel.send(f'Unknown command')
+            await send_message(m_title=f'Unknown command', message=message)
             return 0
 
         nasa_adop_data_final_tuple = nasa_adop_data(modified_nasa_url)
@@ -208,10 +220,17 @@ async def on_message(message):
 
         nasa_adop_data_final = nasa_adop_data_final_tuple[1]
         nasa_apod_last_picture("write", message.channel.id, str(nasa_adop_data_final))
+        
+        if isinstance(nasa_adop_data_final["picture_url"], list):
+            embeded_response_image = nasa_adop_data_final["picture_url"][0]
+            embeded_response_video_url = nasa_adop_data_final["picture_url"][1]
+        else:
+            embeded_response_image = nasa_adop_data_final["picture_url"]
+            embeded_response_video_url = None
+
         embeded_response_title = nasa_adop_data_final["title"]
         embeded_response_description = nasa_adop_data_final["date"]
-        embeded_response_image = nasa_adop_data_final["picture_url"]
-        await send_message(m_title=embeded_response_title, m_description=embeded_response_description, m_image_url=embeded_response_image, message=message)
+        await send_message(m_title=embeded_response_title, m_description=embeded_response_description, m_image_url=embeded_response_image, m_video_url = embeded_response_video_url, message=message)
 
 
 

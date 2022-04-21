@@ -1,5 +1,5 @@
 # bot.py
-#by DarkVIC -> https://github.com/DarkVIC/Discord_bot
+#by DarkVIC -> https://github.com/DarkVIC/2wnty1ne-Discord-Bot
 
 #? Required libaries
 import os
@@ -70,7 +70,6 @@ async def send_message(m_title = None, m_description = None, m_image_url = None,
     if em_image_url[0]:
         embeded_response.set_image(url = em_image_url[1])
 
-
         #TODO Didnt get it to work, still need to use the stream below
         #embeded_image_resolution = f'{embeded_response.image.width}x{embeded_response.image.height}'
 
@@ -86,9 +85,6 @@ async def send_message(m_title = None, m_description = None, m_image_url = None,
 #? Data from NASA APOD data
 def nasa_adop_data(modified_nasa_url, nasa_apod_dict = {}):
     nasa_apod_response_dict = ast.literal_eval(requests.get(modified_nasa_url).text)
-    # for i in nasa_apod_response_dict:
-    #     print(f'{i}: {nasa_apod_response_dict[i]}')
-    # print(f'\n')
     if "title" in nasa_apod_response_dict:
         nasa_apod_dict["title"] = nasa_apod_response_dict["title"]
         nasa_apod_dict["date"] = nasa_apod_response_dict["date"]
@@ -98,7 +94,6 @@ def nasa_adop_data(modified_nasa_url, nasa_apod_dict = {}):
 
     if nasa_apod_response_dict["media_type"] == "video":
         nasa_apod_dict["picture_url"] = [nasa_apod_response_dict["thumbnail_url"], nasa_apod_response_dict["url"]]
-        #nasa_apod_dict["video_url"] = nasa_apod_response_dict["url"]
     else:
         if "hdurl" in nasa_apod_response_dict:
             nasa_apod_dict["picture_url"] = nasa_apod_response_dict["hdurl"]
